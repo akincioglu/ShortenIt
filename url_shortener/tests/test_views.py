@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework.authtoken.models import Token
 from url_shortener.models import Account, ShortenedURL, URLAccess
+from django.utils import timezone
 
 @pytest.fixture
 def api_client():
@@ -96,6 +97,35 @@ class TestURLShortenerViews:
         assert URLAccess.objects.filter(url=shortened).exists()
         shortened.refresh_from_db()
         assert shortened.access_count == 1
+
+    def test_daily_limit_frontend(self, authenticated_client, account):
+        # Set daily limit to 2
+        account.daily_limit = 2
+        account.save()
+
+        url = reverse('shorten_url')
+        
+        # First URL - should succeed
+        response1 = authenticated_client.post(url, {'original_url': 'https://example1.com'})
+        assert response1.status_code == 302  # Redirect after success
+        assert ShortenedURL.objects.filter(original_url='https://example1.com').exists()
+        
+        # Second URL - should succeed
+        response2 = authenticated_client.post(url, {'original_url': 'https://example2.com'})
+        assert response2.status_code == 302  # Redirect after success
+        assert ShortenedURL.objects.filter(original_url='https://example2.com').exists()
+        
+        # Third URL - should fail
+        response3 = authenticated_client.post(url, {'original_url': 'https://example3.com'})
+        assert response3.status_code == 302  # Redirect after error
+        assert not ShortenedURL.objects.filter(original_url='https://example3.com').exists()
+        
+        # Verify total count
+        today_count = ShortenedURL.objects.filter(
+            account=account,
+            created_at__date=timezone.now().date()
+        ).count()
+        assert today_count == 2  # Should not exceed daily limit
 
 @pytest.mark.django_db
 class TestAPIViews:

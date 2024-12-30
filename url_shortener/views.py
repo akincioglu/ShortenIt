@@ -29,7 +29,9 @@ def home(request):
             account=account,
             created_at__date=timezone.now().date()
         ).count()
-        context['daily_limit'] = account.daily_limit - today_count
+        remaining_limit = account.daily_limit - today_count
+        request.session['daily_limit'] = remaining_limit
+        context['daily_limit'] = remaining_limit
     return render(request, 'url_shortener/home.html', context)
 
 @login_required
@@ -72,6 +74,14 @@ def shorten_url(request):
             # Get the full shortened URL
             shortened_url_path = request.build_absolute_uri(f'/{short_code}/')
             messages.success(request, f'URL shortened successfully! Your shortened URL is: {shortened_url_path}')
+            
+            # Update daily limit in session
+            today_count = ShortenedURL.objects.filter(
+                account=request.user.account,
+                created_at__date=timezone.now().date()
+            ).count()
+            request.session['daily_limit'] = request.user.account.daily_limit - today_count
+            
             return redirect('home')
 
     return redirect('home')
