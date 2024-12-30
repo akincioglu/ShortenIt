@@ -4,16 +4,117 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.conf import settings
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.urls import reverse
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 import string
 import random
 from .models import Account, ShortenedURL, URLAccess
 from .serializers import AccountSerializer, ShortenedURLSerializer, URLAccessSerializer
+
+# Frontend Views
+def home(request):
+    context = {}
+    if request.user.is_authenticated:
+        account = Account.objects.get(user=request.user)
+        context['daily_limit'] = account.daily_limit
+    return render(request, 'url_shortener/home.html', context)
+
+@login_required
+def url_list(request):
+    urls = ShortenedURL.objects.filter(account__user=request.user).order_by('-created_at')
+    return render(request, 'url_shortener/url_list.html', {'urls': urls})
+
+@login_required
+def shorten_url(request):
+    if request.method == 'POST':
+        original_url = request.POST.get('original_url')
+        if original_url:
+            # Check daily limit
+            today_count = ShortenedURL.objects.filter(
+                account=request.user.account,
+                created_at__date=timezone.now().date()
+            ).count()
+
+            if today_count >= request.user.account.daily_limit:
+                return render(request, 'url_shortener/home.html', {
+                    'error': 'Daily URL shortening limit exceeded',
+                    'daily_limit': 0
+                })
+
+            # Create shortened URL
+            short_code = generate_short_code()
+            shortened_url = ShortenedURL.objects.create(
+                account=request.user.account,
+                original_url=original_url,
+                short_code=short_code
+            )
+
+            # Update daily limit
+            request.user.account.daily_limit -= 1
+            request.user.account.save()
+
+            # Get the full shortened URL
+            shortened_url = request.build_absolute_uri(f'/{short_code}/')
+            
+            return render(request, 'url_shortener/home.html', {
+                'shortened_url': shortened_url,
+                'daily_limit': request.user.account.daily_limit
+            })
+
+    return render(request, 'url_shortener/home.html', {
+        'daily_limit': request.user.account.daily_limit
+    })
+
+def user_login(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        user = authenticate(username=username, password=password)
+        
+        if user is not None:
+            login(request, user)
+            messages.success(request, 'Login successful!')
+            return redirect('home')
+        else:
+            messages.error(request, 'Invalid username or password')
+    
+    return render(request, 'url_shortener/login.html')
+
+def user_register(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        email = request.POST.get('email')
+        password1 = request.POST.get('password1')
+        password2 = request.POST.get('password2')
+        
+        if password1 != password2:
+            messages.error(request, 'Passwords do not match')
+            return render(request, 'url_shortener/register.html')
+        
+        if User.objects.filter(username=username).exists():
+            messages.error(request, 'Username already exists')
+            return render(request, 'url_shortener/register.html')
+        
+        user = User.objects.create_user(username=username, email=email, password=password1)
+        Account.objects.create(user=user)
+        messages.success(request, 'Registration successful! Please login.')
+        return redirect('login')
+    
+    return render(request, 'url_shortener/register.html')
+
+@login_required
+def user_logout(request):
+    logout(request)
+    messages.success(request, 'Logged out successfully!')
+    return redirect('home')
 
 @swagger_auto_schema(
     method='post',

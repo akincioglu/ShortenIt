@@ -1,0 +1,2 @@
+*.html
+url_shortener/templates/**/*.html 

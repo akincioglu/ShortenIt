@@ -1,0 +1,124 @@
+{% extends 'url_shortener/base.html' %}
+{% block title %}My URLs{% endblock title %}
+{% block content %}
+<div class="url-list">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="h3 mb-0 text-gradient">My Shortened URLs</h2>
+    <a href="{% url 'home' %}" class="btn btn-primary">
+      <i class="fas fa-plus me-2"></i>Create New
+    </a>
+  </div>
+
+  {% if urls %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="bg-light">
+        <tr>
+          <th class="border-0">Short URL</th>
+          <th class="border-0">Original URL</th>
+          <th class="border-0">Created</th>
+          <th class="border-0">Clicks</th>
+          <th class="border-0">Last Access</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for url in urls %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center">
+              <a href="{{ request.scheme }}://{{ request.get_host }}/{{ url.short_code }}/" target="_blank" class="custom-link me-2">{{ url.short_code }}</a>
+              <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard('{{ request.scheme }}://{{ request.get_host }}/{{ url.short_code }}/')">
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
+          </td>
+          <td class="text-truncate" style="max-width: 200px">
+            <a href="{{ url.original_url }}" target="_blank" title="{{ url.original_url }}" class="custom-link">{{ url.original_url }}</a>
+          </td>
+          <td>
+            <span class="text-muted" title="{{ url.created_at|date:'Y-m-d H:i' }}">
+              {{ url.created_at|timesince }} ago
+            </span>
+          </td>
+          <td>
+            <span class="badge bg-primary">{{ url.access_count }}</span>
+          </td>
+          <td>
+            {% if url.last_accessed %}
+              <span class="text-muted" title="{{ url.last_accessed|date:'Y-m-d H:i' }}">
+                {{ url.last_accessed|timesince }} ago
+              </span>
+            {% else %}
+              <span class="badge bg-secondary">Never</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info border-start border-info border-4">
+    <h5 class="alert-heading mb-3 d-flex align-items-center">
+      <i class="fas fa-info-circle me-2"></i>No URLs Yet
+    </h5>
+    <p class="mb-0">You haven't shortened any URLs yet. <a href="{% url 'home' %}" class="custom-link">Create one now!</a></p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text)
+      .then(function() {
+        const btn = event.target.closest('.btn');
+        const icon = btn.querySelector('i');
+        icon.classList.replace('fa-copy', 'fa-check');
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-outline-primary');
+        setTimeout(() => {
+          icon.classList.replace('fa-check', 'fa-copy');
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-outline-primary');
+        }, 2000);
+      })
+      .catch(function(err) {
+        console.error("Failed to copy text: ", err);
+      });
+  }
+</script>
+
+<style>
+  .text-gradient {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .custom-link {
+    color: #6366f1;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    border-bottom: 2px solid transparent;
+  }
+  .custom-link:hover {
+    color: #4f46e5;
+    border-bottom-color: #4f46e5;
+  }
+  .badge {
+    font-weight: 500;
+    padding: 0.5em 1em;
+    border-radius: 6px;
+  }
+  .table th {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+  }
+</style>
+{% endblock content %}

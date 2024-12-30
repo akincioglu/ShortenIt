@@ -1,0 +1,101 @@
+{%extends 'url_shortener/base.html'%}{%block title%}URL Shortener -
+Home{%endblock title%}{%block content%}
+<div class="text-center mb-5">
+  <h1 class="display-4 fw-bold text-gradient mb-3">Make Your Links Shorter</h1>
+  <p class="lead text-muted">Transform long URLs into short, memorable links in seconds</p>
+</div>
+
+<div class="url-form">
+  {% if user.is_authenticated %}
+  <form method="post" action="{% url 'shorten_url' %}">
+    {% csrf_token %}
+    <div class="input-group mb-3 shadow-sm">
+      <input type="url" name="original_url" class="form-control form-control-lg" placeholder="Paste your long URL here..." required />
+      <button type="submit" class="btn btn-primary px-4">
+        <i class="fas fa-link me-2"></i>Shorten
+      </button>
+    </div>
+    {% if daily_limit %}
+    <small class="text-muted d-flex align-items-center">
+      <i class="fas fa-clock me-2"></i>
+      Daily limit remaining: 
+      <span class="badge bg-primary ms-2">{{ daily_limit }}</span>
+    </small>
+    {% endif %}
+  </form>
+
+  {% if shortened_url %}
+  <div class="alert alert-success mt-4 border-start border-success border-4">
+    <h5 class="alert-heading mb-3 d-flex align-items-center">
+      <i class="fas fa-check-circle me-2"></i>URL Shortened Successfully!
+    </h5>
+    <p class="mb-2 text-success">Your shortened URL:</p>
+    <div class="input-group">
+      <input type="text" class="form-control bg-white" value="{{ shortened_url }}" readonly />
+      <button class="btn btn-outline-success" onclick="copyToClipboard('{{ shortened_url }}')">
+        <i class="fas fa-copy me-2"></i>Copy
+      </button>
+    </div>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="alert alert-info">
+    <h5 class="alert-heading mb-3">
+      <i class="fas fa-info-circle me-2"></i>Welcome to URL Shortener!
+    </h5>
+    <p class="mb-0">Please <a href="{% url 'login' %}" class="alert-link">login</a> or <a href="{% url 'register' %}" class="alert-link">register</a> to start shortening URLs.</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row mt-5 g-4">
+  <div class="col-md-4">
+    <div class="card h-100 text-center p-4">
+      <div class="card-body">
+        <i class="fas fa-bolt fa-3x text-primary mb-3"></i>
+        <h3 class="card-title h4">Lightning Fast</h3>
+        <p class="card-text text-muted">Create short URLs instantly with our powerful service</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100 text-center p-4">
+      <div class="card-body">
+        <i class="fas fa-chart-line fa-3x text-primary mb-3"></i>
+        <h3 class="card-title h4">Track Analytics</h3>
+        <p class="card-text text-muted">Monitor your link performance with detailed statistics</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100 text-center p-4">
+      <div class="card-body">
+        <i class="fas fa-shield-alt fa-3x text-primary mb-3"></i>
+        <h3 class="card-title h4">Secure & Reliable</h3>
+        <p class="card-text text-muted">Your links are safe and always accessible</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text)
+      .then(function() {
+        alert("URL copied to clipboard!");
+      })
+      .catch(function(err) {
+        console.error("Failed to copy text: ", err);
+      });
+  }
+</script>
+
+<style>
+  .text-gradient {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+</style>
+{%endblock content%}
