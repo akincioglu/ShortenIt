@@ -18,6 +18,7 @@ import string
 import random
 from .models import Account, ShortenedURL, URLAccess
 from .serializers import AccountSerializer, ShortenedURLSerializer, URLAccessSerializer
+from django.core.cache import cache
 
 # Frontend Views
 def home(request):
@@ -44,10 +45,8 @@ def shorten_url(request):
             ).count()
 
             if today_count >= request.user.account.daily_limit:
-                return render(request, 'url_shortener/home.html', {
-                    'error': 'Daily URL shortening limit exceeded',
-                    'daily_limit': 0
-                })
+                messages.error(request, 'Daily URL shortening limit exceeded')
+                return redirect('home')
 
             # Create shortened URL
             short_code = generate_short_code()
@@ -57,21 +56,12 @@ def shorten_url(request):
                 short_code=short_code
             )
 
-            # Update daily limit
-            request.user.account.daily_limit -= 1
-            request.user.account.save()
-
             # Get the full shortened URL
-            shortened_url = request.build_absolute_uri(f'/{short_code}/')
-            
-            return render(request, 'url_shortener/home.html', {
-                'shortened_url': shortened_url,
-                'daily_limit': request.user.account.daily_limit
-            })
+            shortened_url_path = request.build_absolute_uri(f'/{short_code}/')
+            messages.success(request, f'URL shortened successfully! Your shortened URL is: {shortened_url_path}')
+            return redirect('home')
 
-    return render(request, 'url_shortener/home.html', {
-        'daily_limit': request.user.account.daily_limit
-    })
+    return redirect('home')
 
 def user_login(request):
     if request.method == 'POST':
@@ -217,39 +207,29 @@ class ShortenedURLViewSet(viewsets.ModelViewSet):
             return ShortenedURL.objects.none()
         return ShortenedURL.objects.filter(account__user=self.request.user)
 
-    @swagger_auto_schema(
-        operation_description="Yeni bir URL kısalt. Günlük limit: 50 URL",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['original_url'],
-            properties={
-                'original_url': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    format=openapi.FORMAT_URI,
-                    description='Kısaltılacak orijinal URL'
-                ),
-            },
-        ),
-        responses={
-            201: ShortenedURLSerializer,
-            400: "Geçersiz URL veya günlük limit aşıldı"
-        }
-    )
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
     def perform_create(self, serializer):
         account = self.request.user.account
-        account.reset_daily_usage()  # Reset if it's a new day
-
-        if account.daily_limit <= 0:
+        
+        # Check daily limit
+        today_count = ShortenedURL.objects.filter(
+            account=account,
+            created_at__date=timezone.now().date()
+        ).count()
+        
+        if today_count >= account.daily_limit:
             raise serializers.ValidationError(
                 {"error": "Daily URL shortening limit exceeded"}
             )
+        
+        serializer.save(account=account)
 
-        short_code = generate_short_code()
-        serializer.save(account=account, short_code=short_code)
-        account.increment_usage()
+def get_cached_url(short_code):
+    cache_key = f'url_{short_code}'
+    return cache.get(cache_key)
+
+def cache_url(short_code, original_url):
+    cache_key = f'url_{short_code}'
+    cache.set(cache_key, original_url, timeout=settings.URL_CACHE_TTL)
 
 @swagger_auto_schema(
     method='get',
@@ -262,20 +242,20 @@ class ShortenedURLViewSet(viewsets.ModelViewSet):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def redirect_to_original(request, short_code):
-    url = get_object_or_404(ShortenedURL, short_code=short_code)
+    shortened_url = get_object_or_404(ShortenedURL, short_code=short_code)
     
     # Log access
     URLAccess.objects.create(
-        url=url,
+        url=shortened_url,
         ip_address=request.META.get('REMOTE_ADDR'),
-        user_agent=request.META.get('HTTP_USER_AGENT'),
-        referer=request.META.get('HTTP_REFERER')
+        user_agent=request.META.get('HTTP_USER_AGENT', '')
     )
     
-    # Update stats
-    url.update_access_stats()
+    # Update access count
+    shortened_url.access_count += 1
+    shortened_url.save()
     
-    return redirect(url.original_url)
+    return redirect(shortened_url.original_url)
 
 class URLAccessViewSet(viewsets.ReadOnlyModelViewSet):
     """

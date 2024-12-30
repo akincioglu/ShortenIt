@@ -16,4 +16,4 @@ class ShortenedURLSerializer(serializers.ModelSerializer):
 class URLAccessSerializer(serializers.ModelSerializer):
     class Meta:
         model = URLAccess
-        fields = ['id', 'accessed_at', 'ip_address', 'user_agent', 'referer'] 
+        fields = ['id', 'accessed_at', 'ip_address', 'user_agent'] 
