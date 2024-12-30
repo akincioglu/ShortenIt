@@ -1,52 +1,59 @@
 {%extends 'url_shortener/base.html'%}{%block title%}URL Shortener -
 Home{%endblock title%}{%block content%}
-<div class="text-center mb-5">
-  <h1 class="display-4 fw-bold text-gradient mb-3">Make Your Links Shorter</h1>
-  <p class="lead text-muted">Transform long URLs into short, memorable links in seconds</p>
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-body">
+                    <h2 class="card-title text-center mb-4">URL Shortener</h2>
+                    
+                    {% if user.is_authenticated %}
+                        <form method="post" action="{% url 'shorten_url' %}" class="mb-4">
+                            {% csrf_token %}
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">https://</span>
+                                <input type="text" name="original_url" class="form-control" 
+                                       placeholder="example.com/your-long-url" 
+                                       pattern="^(?:(?!https?://).)*$"
+                                       title="Please enter URL without http:// or https://"
+                                       required>
+                                <button type="submit" class="btn btn-primary">Shorten URL</button>
+                            </div>
+                            <small class="text-muted">Daily limit remaining: {{ daily_limit }}</small>
+                        </form>
+
+                        {% if messages %}
+                            {% for message in messages %}
+                                <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center">
+                            <p class="mb-3">Please login to shorten URLs</p>
+                            <a href="{% url 'login' %}" class="btn btn-primary">Login</a>
+                            <a href="{% url 'register' %}" class="btn btn-outline-primary">Register</a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div class="url-form">
-  {% if user.is_authenticated %}
-  <form method="post" action="{% url 'shorten_url' %}">
-    {% csrf_token %}
-    <div class="input-group mb-3 shadow-sm">
-      <input type="url" name="original_url" class="form-control form-control-lg" placeholder="Paste your long URL here..." required />
-      <button type="submit" class="btn btn-primary px-4">
-        <i class="fas fa-link me-2"></i>Shorten
-      </button>
-    </div>
-    {% if daily_limit %}
-    <small class="text-muted d-flex align-items-center">
-      <i class="fas fa-clock me-2"></i>
-      Daily limit remaining: 
-      <span class="badge bg-primary ms-2">{{ daily_limit }}</span>
-    </small>
-    {% endif %}
-  </form>
-
-  {% if shortened_url %}
-  <div class="alert alert-success mt-4 border-start border-success border-4">
-    <h5 class="alert-heading mb-3 d-flex align-items-center">
-      <i class="fas fa-check-circle me-2"></i>URL Shortened Successfully!
-    </h5>
-    <p class="mb-2 text-success">Your shortened URL:</p>
-    <div class="input-group">
-      <input type="text" class="form-control bg-white" value="{{ shortened_url }}" readonly />
-      <button class="btn btn-outline-success" onclick="copyToClipboard('{{ shortened_url }}')">
-        <i class="fas fa-copy me-2"></i>Copy
-      </button>
-    </div>
-  </div>
-  {% endif %}
-  {% else %}
-  <div class="alert alert-info">
-    <h5 class="alert-heading mb-3">
-      <i class="fas fa-info-circle me-2"></i>Welcome to URL Shortener!
-    </h5>
-    <p class="mb-0">Please <a href="{% url 'login' %}" class="alert-link">login</a> or <a href="{% url 'register' %}" class="alert-link">register</a> to start shortening URLs.</p>
-  </div>
-  {% endif %}
-</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-select input content when clicked
+    const urlInput = document.querySelector('input[name="original_url"]');
+    if (urlInput) {
+        urlInput.addEventListener('click', function() {
+            this.select();
+        });
+    }
+});
+</script>
 
 <div class="row mt-5 g-4">
   <div class="col-md-4">

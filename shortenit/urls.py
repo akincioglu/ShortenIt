@@ -19,6 +19,7 @@ from django.urls import path, include
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from url_shortener.urls import api_urlpatterns, frontend_urlpatterns, redirect_urlpatterns
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -31,13 +32,24 @@ schema_view = get_schema_view(
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
+    url='http://127.0.0.1:8000',
+    patterns=[path('api/', include(api_urlpatterns))],
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('url_shortener.urls')),
-    # Swagger URLs
-    path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path('', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    
+    # API URLs including Swagger
+    path('api/', include([
+        path('', include(api_urlpatterns)),
+        path('swagger.json', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+        path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+        path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    ])),
+    
+    # Frontend URLs
+    path('', include(frontend_urlpatterns)),
+    
+    # URL Shortener redirect (keep this last)
+    path('', include(redirect_urlpatterns)),
 ]

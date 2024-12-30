@@ -2,7 +2,7 @@ from rest_framework import viewsets, status, serializers
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.authtoken.models import Token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -25,7 +25,11 @@ def home(request):
     context = {}
     if request.user.is_authenticated:
         account = Account.objects.get(user=request.user)
-        context['daily_limit'] = account.daily_limit
+        today_count = ShortenedURL.objects.filter(
+            account=account,
+            created_at__date=timezone.now().date()
+        ).count()
+        context['daily_limit'] = account.daily_limit - today_count
     return render(request, 'url_shortener/home.html', context)
 
 @login_required
@@ -33,11 +37,20 @@ def url_list(request):
     urls = ShortenedURL.objects.filter(account__user=request.user).order_by('-created_at')
     return render(request, 'url_shortener/url_list.html', {'urls': urls})
 
+def validate_and_format_url(url):
+    """Add https:// prefix if not present and validate URL format"""
+    if not url.startswith(('http://', 'https://')):
+        url = f'https://{url}'
+    return url
+
 @login_required
 def shorten_url(request):
     if request.method == 'POST':
         original_url = request.POST.get('original_url')
         if original_url:
+            # Format and validate URL
+            original_url = validate_and_format_url(original_url)
+            
             # Check daily limit
             today_count = ShortenedURL.objects.filter(
                 account=request.user.account,
@@ -177,13 +190,93 @@ class AccountViewSet(viewsets.ModelViewSet):
     """
     Account yönetimi için API endpoint'leri.
     
-    * Hesap bilgilerini görüntüleme
-    * Günlük URL kısaltma limitini güncelleme
+    list:
+        Kullanıcının hesap bilgilerini listeler.
+        
+        Dönüş:
+            - id: Hesap ID'si
+            - api_key: API anahtarı
+            - daily_limit: Günlük URL kısaltma limiti
+            - created_at: Hesap oluşturulma tarihi
+            - updated_at: Son güncelleme tarihi
+    
+    retrieve:
+        Belirli bir hesabın detaylarını döndürür.
+    
+    update:
+        Hesap bilgilerini günceller.
+        
+        Parametreler:
+            - daily_limit: Yeni günlük URL kısaltma limiti
+    
+    partial_update:
+        Hesap bilgilerini kısmen günceller.
     """
     queryset = Account.objects.all()
     serializer_class = AccountSerializer
     permission_classes = [IsAuthenticated]
     authentication_classes = [TokenAuthentication]
+
+    @swagger_auto_schema(
+        operation_description="Kullanıcının hesap bilgilerini listeler",
+        responses={
+            200: AccountSerializer(many=True),
+            401: "Yetkilendirme hatası"
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Belirli bir hesabın detaylarını döndürür",
+        responses={
+            200: AccountSerializer,
+            401: "Yetkilendirme hatası",
+            404: "Hesap bulunamadı"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Hesap bilgilerini günceller",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'daily_limit': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='Yeni günlük URL kısaltma limiti'
+                ),
+            },
+        ),
+        responses={
+            200: AccountSerializer,
+            400: "Geçersiz veri",
+            401: "Yetkilendirme hatası"
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Hesap bilgilerini kısmen günceller",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'daily_limit': openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description='Yeni günlük URL kısaltma limiti'
+                ),
+            },
+        ),
+        responses={
+            200: AccountSerializer,
+            400: "Geçersiz veri",
+            401: "Yetkilendirme hatası"
+        }
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -194,13 +287,87 @@ class ShortenedURLViewSet(viewsets.ModelViewSet):
     """
     URL kısaltma işlemleri için API endpoint'leri.
     
-    * URL kısaltma
-    * Kısaltılmış URL'leri listeleme
-    * URL detaylarını görüntüleme
+    list:
+        Kısaltılmış URL'lerin listesini döndürür.
+    
+    create:
+        Yeni bir URL kısaltır.
+        
+        Parametreler:
+            - original_url: Kısaltılacak orijinal URL
+            
+        Dönüş:
+            - id: URL ID'si
+            - original_url: Orijinal URL
+            - short_code: Kısaltılmış kod
+            - created_at: Oluşturulma tarihi
+            - last_accessed: Son erişim tarihi
+            - access_count: Erişim sayısı
+    
+    retrieve:
+        Belirli bir kısaltılmış URL'nin detaylarını döndürür.
+    
+    delete:
+        Belirli bir kısaltılmış URL'yi siler.
     """
     serializer_class = ShortenedURLSerializer
     permission_classes = [IsAuthenticated]
-    authentication_classes = [TokenAuthentication]
+    authentication_classes = [SessionAuthentication, TokenAuthentication]
+    lookup_field = 'short_code'
+
+    @swagger_auto_schema(
+        operation_description="Kısaltılmış URL'lerin listesini döndürür",
+        responses={
+            200: ShortenedURLSerializer(many=True),
+            401: "Yetkilendirme hatası"
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Yeni bir URL kısaltır",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['original_url'],
+            properties={
+                'original_url': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_URI,
+                    description='Kısaltılacak orijinal URL'
+                ),
+            },
+        ),
+        responses={
+            201: ShortenedURLSerializer,
+            400: "Geçersiz URL veya günlük limit aşıldı",
+            401: "Yetkilendirme hatası"
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Belirli bir kısaltılmış URL'nin detaylarını döndürür",
+        responses={
+            200: ShortenedURLSerializer,
+            401: "Yetkilendirme hatası",
+            404: "URL bulunamadı"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Belirli bir kısaltılmış URL'yi siler",
+        responses={
+            204: "URL başarıyla silindi",
+            401: "Yetkilendirme hatası",
+            404: "URL bulunamadı"
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -221,7 +388,13 @@ class ShortenedURLViewSet(viewsets.ModelViewSet):
                 {"error": "Daily URL shortening limit exceeded"}
             )
         
-        serializer.save(account=account)
+        # Generate short code
+        short_code = generate_short_code()
+        serializer.save(account=account, short_code=short_code)
+
+    def validate_original_url(self, value):
+        """Validate and format the URL before saving"""
+        return validate_and_format_url(value)
 
 def get_cached_url(short_code):
     cache_key = f'url_{short_code}'
@@ -234,6 +407,15 @@ def cache_url(short_code, original_url):
 @swagger_auto_schema(
     method='get',
     operation_description="Kısa URL'yi kullanarak orijinal URL'ye yönlendir",
+    manual_parameters=[
+        openapi.Parameter(
+            'short_code',
+            openapi.IN_PATH,
+            description="Kısaltılmış URL kodu",
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ],
     responses={
         302: "Orijinal URL'ye yönlendirme",
         404: "URL bulunamadı"
@@ -251,8 +433,9 @@ def redirect_to_original(request, short_code):
         user_agent=request.META.get('HTTP_USER_AGENT', '')
     )
     
-    # Update access count
+    # Update access count and last accessed time
     shortened_url.access_count += 1
+    shortened_url.last_accessed = timezone.now()
     shortened_url.save()
     
     return redirect(shortened_url.original_url)
@@ -261,12 +444,42 @@ class URLAccessViewSet(viewsets.ReadOnlyModelViewSet):
     """
     URL erişim istatistikleri için API endpoint'leri.
     
-    * URL'lere yapılan erişimleri görüntüleme
-    * Erişim detaylarını (IP, User Agent, vb.) görüntüleme
+    list:
+        Tüm URL erişim kayıtlarını listeler.
+        
+        Dönüş:
+            - id: Erişim kaydı ID'si
+            - accessed_at: Erişim tarihi
+            - ip_address: Erişim yapan IP adresi
+            - user_agent: Erişim yapan tarayıcı bilgisi
+    
+    retrieve:
+        Belirli bir erişim kaydının detaylarını döndürür.
     """
     serializer_class = URLAccessSerializer
     permission_classes = [IsAuthenticated]
     authentication_classes = [TokenAuthentication]
+
+    @swagger_auto_schema(
+        operation_description="Tüm URL erişim kayıtlarını listeler",
+        responses={
+            200: URLAccessSerializer(many=True),
+            401: "Yetkilendirme hatası"
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Belirli bir erişim kaydının detaylarını döndürür",
+        responses={
+            200: URLAccessSerializer,
+            401: "Yetkilendirme hatası",
+            404: "Erişim kaydı bulunamadı"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
